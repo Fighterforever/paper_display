@@ -237,4 +237,44 @@ blockquote {
     padding-left: 1rem;
     margin-left: 0;
     color: #64748b;
+}
+
+/* 两栏布局 - 方法详情页 */
+.method-detail-container {
+    display: grid;
+    grid-template-columns: 3fr 2fr;
+    gap: 2rem;
+}
+
+/* 内容列 */
+.content-column {
+    width: 100%;
+}
+
+/* 图表列 */
+.diagram-column {
+    width: 100%;
+}
+
+/* 固定流程图 */
+.sticky-diagram {
+    position: sticky;
+    top: 2rem;
+    background-color: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+/* 响应式适配 */
+@media (max-width: 992px) {
+    .method-detail-container {
+        grid-template-columns: 1fr;
+    }
+    
+    .sticky-diagram {
+        position: relative;
+        top: 0;
+    }
 } 
