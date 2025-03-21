@@ -153,18 +153,22 @@ const processMarkdown = (content) => {
 };
 
 // 生成面包屑导航
-const generateBreadcrumbs = (paths) => {
-    let html = '<li class="breadcrumb-item"><a href="ROOT_PATHindex.html">首页</a></li>';
+const generateBreadcrumbs = (pathParts) => {
+    let html = `<li class="breadcrumb-item"><a href="ROOT_PATH/index.html">首页</a></li>`;
     let currentPath = '';
     
-    for (let i = 0; i < paths.length; i++) {
-        currentPath += paths[i] + '/';
-        const isLast = i === paths.length - 1;
+    for (let i = 0; i < pathParts.length; i++) {
+        const part = pathParts[i];
+        const isLast = i === pathParts.length - 1;
+        
+        // 为了GitHub Pages，确保URL使用正确编码
+        const encodedPart = encodeURIComponent(part);
+        currentPath += (currentPath ? '/' : '') + encodedPart;
         
         if (isLast) {
-            html += `<li class="breadcrumb-item active" aria-current="page">${paths[i]}</li>`;
+            html += `<li class="breadcrumb-item active" aria-current="page">${part}</li>`;
         } else {
-            html += `<li class="breadcrumb-item"><a href="ROOT_PATH${currentPath}index.html">${paths[i]}</a></li>`;
+            html += `<li class="breadcrumb-item"><a href="ROOT_PATH/${currentPath}/index.html">${part}</a></li>`;
         }
     }
     
@@ -214,7 +218,7 @@ const findBestMarkdown = (dirPath) => {
 };
 
 // 生成目录页面
-const generateDirectoryPage = (dirPath, title, items, level) => {
+const generateDirectoryPage = (dirPath, title, subdirs) => {
     const template = readTemplate();
     const relativePath = path.relative(dirPath, rootDir).replace(/\\/g, '/');
     const rootPath = relativePath ? relativePath + '/' : '';
@@ -224,44 +228,48 @@ const generateDirectoryPage = (dirPath, title, items, level) => {
     let breadcrumbs = generateBreadcrumbs(pathParts);
     breadcrumbs = breadcrumbs.replace(/ROOT_PATH/g, rootPath);
     
-    // 内容
-    let content = `
-    <div class="row mb-5">
-        <div class="col-12 text-center" data-aos="fade-up">
-            <h2 class="display-5 fw-bold">${title}</h2>
-            <p class="lead text-muted">${methodDescriptions[title] || subMethodDescriptions[title] || '微服务架构中的根因分析方法'}</p>
-        </div>
-    </div>
+    // 构建子目录卡片
+    let cardsHtml = '';
     
-    <div class="method-grid">
-    `;
-    
-    items.forEach((item, index) => {
-        const itemName = path.basename(item);
-        const itemIcon = level === 0 ? methodIcons[itemName] : subMethodIcons[itemName] || 'fa-folder';
-        const itemDescription = level === 0 ? methodDescriptions[itemName] : subMethodDescriptions[itemName] || '微服务架构中的根因分析方法';
+    for (let i = 0; i < subdirs.length; i++) {
+        const subdir = subdirs[i];
+        const subdirPath = path.join(dirPath, subdir);
         
-        content += `
-        <div class="method-item" data-aos="fade-up" data-aos-delay="${index * 100}">
+        // 确保连接正确编码
+        const encodedSubdir = encodeURIComponent(subdir);
+        const methodIcon = subMethodIcons[subdir] || 'fa-folder';
+        const methodDesc = subMethodDescriptions[subdir] || '微服务架构中的根因分析方法';
+        
+        cardsHtml += `
+        <div class="method-item" data-aos="fade-up" data-aos-delay="${100 * (i % 3)}">
             <div class="method-card">
                 <div class="card-body text-center p-5">
                     <div class="method-icon">
-                        <i class="fas ${itemIcon}"></i>
+                        <i class="${methodIcon}"></i>
                     </div>
-                    <h3 class="fw-bold mb-3">${itemName}</h3>
-                    <p class="text-muted mb-4">${itemDescription}</p>
-                    <a href="${encodeURIComponent(itemName)}/index.html" class="btn btn-primary">了解更多</a>
+                    <h3 class="fw-bold mb-3">${subdir}</h3>
+                    <p class="text-muted mb-4">${methodDesc}</p>
+                    <a href="${encodedSubdir}/index.html" class="btn btn-primary">了解更多</a>
                 </div>
             </div>
         </div>`;
-    });
+    }
     
-    content += '</div>';
+    // 方法网格布局
+    const content = `
+    <div class="mb-5">
+        <h2 class="section-title">${title} 分析方法</h2>
+        <p class="lead text-muted mb-5">选择以下方法了解更多详情</p>
+        
+        <div class="method-grid">
+            ${cardsHtml}
+        </div>
+    </div>`;
     
     // 替换模板中的占位符
     let html = template
         .replace(/{{TITLE}}/g, title)
-        .replace(/{{SUBTITLE}}/g, level === 0 ? '微服务架构中的根因分析方法' : (methodDescriptions[title] || subMethodDescriptions[title] || '深入探究故障定位技术'))
+        .replace(/{{SUBTITLE}}/g, '微服务架构中的根因分析方法')
         .replace(/{{BREADCRUMBS}}/g, breadcrumbs)
         .replace(/{{MAIN_CONTENT}}/g, content)
         .replace(/{{ROOT_PATH}}/g, rootPath);
@@ -348,76 +356,110 @@ const generateMethodPage = (dirPath, title, mdFile, imgFile) => {
     console.log(`生成方法页面: ${outputPath}`);
 };
 
-// 查找目录中的所有子目录，忽略以.开头的隐藏目录
-const findSubdirectories = (dirPath) => {
-    if (!fs.existsSync(dirPath)) return [];
-    
-    try {
-        return fs.readdirSync(dirPath, { withFileTypes: true })
-            .filter(item => !item.name.startsWith('.') && item.isDirectory())
-            .map(item => path.join(dirPath, item.name));
-    } catch (error) {
-        console.error(`读取目录失败(${dirPath}):`, error);
-        return [];
-    }
-};
-
-// 处理具体方法的三级目录
-const processMethodDirectory = (dirPath) => {
-    const dirName = path.basename(dirPath);
+// 处理目录
+const processDirectory = (dirPath, isToplevel = false) => {
     console.log(`处理方法目录: ${dirPath}`);
+    const dirName = path.basename(dirPath);
     
-    // 查找子目录，可能是具体实现方法
-    const subDirs = findSubdirectories(dirPath);
+    // 获取子目录
+    const subdirs = getDirectories(dirPath);
     
-    // 如果有子目录，为每个子目录生成页面
-    if (subDirs.length > 0) {
-        // 生成二级目录页面
-        generateDirectoryPage(dirPath, dirName, subDirs, 1);
+    if (subdirs.length > 0) {
+        // 生成目录页面
+        generateDirectoryPage(dirPath, dirName, subdirs);
         
-        // 递归处理每个子目录
-        subDirs.forEach(subDir => {
-            processImplementationDirectory(subDir);
+        // 处理子目录
+        subdirs.forEach(subdir => {
+            const subdirPath = path.join(dirPath, subdir);
+            const isImplementation = getDirectories(subdirPath).length === 0;
+            
+            if (isImplementation) {
+                // 这是一个具体实现方法的目录
+                processImplementation(subdirPath);
+            } else {
+                // 这是一个中间分类目录
+                processDirectory(subdirPath);
+            }
         });
-    } else {
-        // 没有子目录，可能本身就是最终级别
-        const mdFile = findBestMarkdown(dirPath);
-        const imgFile = findBestImage(dirPath);
-        
-        // 即使没有找到md或img也生成页面
-        generateMethodPage(dirPath, dirName, mdFile, imgFile);
     }
 };
 
-// 处理具体实现方法的目录
-const processImplementationDirectory = (dirPath) => {
-    const dirName = path.basename(dirPath);
+// 获取目录下的所有子目录
+const getDirectories = (source) => {
+    return fs.readdirSync(source, { withFileTypes: true })
+        .filter(dirent => dirent.isDirectory())
+        .map(dirent => dirent.name);
+};
+
+// 处理方法实现目录
+const processImplementation = (dirPath) => {
+    const methodName = path.basename(dirPath);
     console.log(`处理实现目录: ${dirPath}`);
     
-    // 查找子目录，进一步细分或实现
-    const subDirs = findSubdirectories(dirPath);
+    // 查找目录中的 Markdown 文件和图片
+    const files = fs.readdirSync(dirPath);
     
-    if (subDirs.length > 0) {
-        // 生成三级目录页面
-        generateDirectoryPage(dirPath, dirName, subDirs, 2);
-        
-        // 递归处理每个子目录
-        subDirs.forEach(subDir => {
-            const subDirName = path.basename(subDir);
-            const mdFile = findBestMarkdown(subDir);
-            const imgFile = findBestImage(subDir);
-            
-            // 生成最终方法页面
-            generateMethodPage(subDir, subDirName, mdFile, imgFile);
-        });
-    } else {
-        // 没有子目录，直接生成方法页面
-        const mdFile = findBestMarkdown(dirPath);
-        const imgFile = findBestImage(dirPath);
-        
-        // 即使没有找到md或img也生成页面
-        generateMethodPage(dirPath, dirName, mdFile, imgFile);
+    let mdFile = null;
+    let imgFile = null;
+    
+    // 使用新的helper函数
+    mdFile = findBestMarkdownFile(dirPath, files, methodName);
+    imgFile = findBestImageFile(dirPath, files, methodName);
+    
+    // 生成方法页面
+    generateMethodPage(dirPath, methodName, mdFile, imgFile);
+};
+
+// 获取方法图标
+const getMethodIcon = (methodName) => {
+    return methodIcons[methodName] || subMethodIcons[methodName] || 'fas fa-folder';
+};
+
+// 获取方法描述
+const getMethodDescription = (methodName) => {
+    return methodDescriptions[methodName] || subMethodDescriptions[methodName] || '微服务架构中的根因分析方法';
+};
+
+// 查找最佳的Markdown文件
+const findBestMarkdownFile = (dirPath, files, methodName) => {
+    // 尝试查找与方法名匹配的Markdown文件
+    const mdFiles = files.filter(file => file.endsWith('.md'));
+    
+    if (mdFiles.length === 0) return null;
+    
+    // 首选项：与方法名完全匹配的文件
+    const exactMatch = mdFiles.find(file => 
+        path.basename(file, '.md').toLowerCase() === methodName.toLowerCase());
+    if (exactMatch) return path.join(dirPath, exactMatch);
+    
+    // 备选项：任何Markdown文件
+    return path.join(dirPath, mdFiles[0]);
+};
+
+// 查找最佳的图片文件
+const findBestImageFile = (dirPath, files, methodName) => {
+    const imgExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg'];
+    const imgFiles = files.filter(file => 
+        imgExts.some(ext => file.toLowerCase().endsWith(ext)));
+    
+    if (imgFiles.length === 0) return null;
+    
+    // 首选项：与方法名匹配的图片
+    for (const ext of imgExts) {
+        const exactMatch = imgFiles.find(file => 
+            path.basename(file, ext).toLowerCase() === methodName.toLowerCase());
+        if (exactMatch) return path.join(dirPath, exactMatch);
     }
+    
+    // 次选项：包含 "流程" 或 "framework" 或 "architecture" 的图片
+    const keywordMatch = imgFiles.find(file => 
+        file.includes('流程') || 
+        file.includes('framework') || 
+        file.includes('architecture'));
+    if (keywordMatch) return path.join(dirPath, keywordMatch);
+    
+    // 备选项：任何图片文件
+    return path.join(dirPath, imgFiles[0]);
 };
 
 // 主函数
@@ -438,14 +480,14 @@ const main = () => {
         }
         
         // 获取所有一级方法目录
-        const methodDirs = findSubdirectories(rootDir)
-            .filter(dir => Object.keys(methodIcons).includes(path.basename(dir)));
+        const methodDirs = getDirectories(rootDir)
+            .filter(dir => Object.keys(methodIcons).includes(dir));
         
         console.log(`找到${methodDirs.length}个方法目录`);
         
         // 处理每个方法目录
         methodDirs.forEach(dir => {
-            processMethodDirectory(dir);
+            processDirectory(dir);
         });
         
         console.log('网站页面生成完成！');
